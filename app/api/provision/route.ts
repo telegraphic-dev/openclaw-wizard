@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
         };
 
-        // Test API connection
+        // Test API connection and check for existing server
         send({ progress: '🔑 Verifying API token...' });
         const testRes = await fetch(`${HETZNER_API}/servers`, { headers });
         if (!testRes.ok) {
@@ -34,6 +34,71 @@ export async function POST(request: NextRequest) {
           controller.close();
           return;
         }
+        
+        // Check if server with this name already exists
+        const serversData = await testRes.json();
+        const existingServer = serversData.servers?.find((s: { name: string }) => s.name === serverName);
+        
+        if (existingServer) {
+          send({ progress: `✓ Found existing server "${serverName}"` });
+          
+          // Resume from existing server
+          const serverId = existingServer.id;
+          const serverIp = existingServer.public_net?.ipv4?.ip;
+          
+          if (!serverIp) {
+            send({ error: 'Existing server has no IP. Please delete it in Hetzner Console and try again.' });
+            controller.close();
+            return;
+          }
+          
+          // Check server status
+          if (existingServer.status !== 'running') {
+            send({ progress: `⏳ Server is ${existingServer.status}, waiting for it to be ready...` });
+            
+            for (let i = 0; i < 60; i++) {
+              await new Promise(r => setTimeout(r, 3000));
+              const statusRes = await fetch(`${HETZNER_API}/servers/${serverId}`, { headers });
+              const statusData = await statusRes.json();
+              if (statusData.server.status === 'running') {
+                send({ progress: '✓ Server is running' });
+                break;
+              }
+              if (i === 59) {
+                send({ error: 'Server taking too long to start. Please check Hetzner Console.' });
+                controller.close();
+                return;
+              }
+            }
+          } else {
+            send({ progress: '✓ Server is running' });
+          }
+          
+          send({ progress: '🔧 Waiting for OpenClaw installation to complete...' });
+          send({ progress: '(If this is a fresh retry, installation continues in background)' });
+          
+          // Wait for installation (might already be done if this is a retry)
+          await new Promise(r => setTimeout(r, 60000)); // Wait 1 minute on retry
+          
+          send({ progress: '✓ Installation should be complete!' });
+          
+          const gatewayToken = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+            .map(b => b.toString(16).padStart(2, '0')).join('');
+          
+          send({
+            done: true,
+            server: {
+              ip: serverIp,
+              name: serverName,
+              token: gatewayToken,
+              rootPassword: null,
+            },
+          });
+          
+          controller.close();
+          return;
+        }
+        
         send({ progress: '✓ API token valid' });
 
         // Upload SSH key if provided

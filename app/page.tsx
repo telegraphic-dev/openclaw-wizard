@@ -326,12 +326,28 @@ export default function Wizard() {
               {error && (
                 <div className="bg-red-900/50 border border-red-500 rounded-lg p-4">
                   <p className="text-red-200">{error}</p>
-                  <button
-                    onClick={() => setStep('api-token')}
-                    className="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition"
-                  >
-                    Try Again
-                  </button>
+                  <div className="flex gap-3 mt-4">
+                    <button
+                      onClick={() => {
+                        setError('');
+                        setProgress(['Resuming...']);
+                        startProvisioning();
+                      }}
+                      className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-4 rounded-lg transition"
+                    >
+                      🔄 Resume / Retry
+                    </button>
+                    <button
+                      onClick={() => {
+                        setError('');
+                        setProgress([]);
+                        setStep('ssh-key');
+                      }}
+                      className="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition"
+                    >
+                      ← Change Settings
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
