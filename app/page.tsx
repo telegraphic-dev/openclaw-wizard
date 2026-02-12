@@ -8,6 +8,7 @@ interface ServerDetails {
   ip: string;
   name: string;
   token: string;
+  isExisting?: boolean;
 }
 
 export default function Wizard() {
@@ -366,11 +367,28 @@ export default function Wizard() {
                   <span className="text-slate-400">Server IP:</span>
                   <code className="ml-2 text-green-400">{serverDetails.ip}</code>
                 </div>
-                <div>
-                  <span className="text-slate-400">Gateway Token:</span>
-                  <code className="ml-2 text-green-400 break-all">{serverDetails.token}</code>
-                </div>
+                {!serverDetails.isExisting && (
+                  <div>
+                    <span className="text-slate-400">Gateway Token:</span>
+                    <code className="ml-2 text-green-400 break-all">{serverDetails.token}</code>
+                  </div>
+                )}
               </div>
+              
+              {serverDetails.isExisting && (
+                <div className="bg-amber-900/30 border border-amber-500 rounded-lg p-4">
+                  <h3 className="font-bold mb-2">📋 Get Your Token</h3>
+                  <p className="text-slate-300 text-sm mb-2">
+                    Connect to your server and run:
+                  </p>
+                  <code className="block bg-slate-900 p-2 rounded text-green-400 text-sm">
+                    cat ~/.openclaw/config.yaml | grep token
+                  </code>
+                  <p className="text-slate-400 text-xs mt-2">
+                    Or check the gateway logs for the token
+                  </p>
+                </div>
+              )}
 
               <div className="bg-blue-900/30 border border-blue-500 rounded-lg p-4">
                 <h3 className="font-bold mb-2">🖥️ Connect to Your Server</h3>

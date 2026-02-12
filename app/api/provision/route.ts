@@ -74,24 +74,19 @@ export async function POST(request: NextRequest) {
             send({ progress: '✓ Server is running' });
           }
           
-          send({ progress: '🔧 Waiting for OpenClaw installation to complete...' });
-          send({ progress: '(If this is a fresh retry, installation continues in background)' });
-          
-          // Wait for installation (might already be done if this is a retry)
-          await new Promise(r => setTimeout(r, 60000)); // Wait 1 minute on retry
-          
-          send({ progress: '✓ Installation should be complete!' });
-          
-          const gatewayToken = Array.from(crypto.getRandomValues(new Uint8Array(32)))
-            .map(b => b.toString(16).padStart(2, '0')).join('');
+          // Server exists and is running - show details immediately
+          // User can check server for the actual token
+          send({ progress: '✓ Server is already set up!' });
+          send({ progress: 'Showing connection details...' });
           
           send({
             done: true,
             server: {
               ip: serverIp,
               name: serverName,
-              token: gatewayToken,
+              token: '(check server - see instructions below)',
               rootPassword: null,
+              isExisting: true,
             },
           });
           
