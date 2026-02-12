@@ -9,6 +9,7 @@ interface ServerDetails {
   name: string;
   token: string;
   isExisting?: boolean;
+  serverId?: number;
 }
 
 export default function Wizard() {
@@ -396,15 +397,15 @@ export default function Wizard() {
                   No SSH client? Use Hetzner&apos;s built-in web console:
                 </p>
                 <a
-                  href="https://console.hetzner.cloud/projects"
+                  href={`https://console.hetzner.cloud/servers/${serverDetails.serverId}/console`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="block w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-center transition"
                 >
-                  Open Hetzner Console →
+                  Open Web Console →
                 </a>
                 <p className="text-slate-400 text-xs mt-2">
-                  Click your server → Console tab → Opens terminal in browser
+                  Server ID: {serverDetails.serverId} • Opens terminal in browser
                 </p>
               </div>
 

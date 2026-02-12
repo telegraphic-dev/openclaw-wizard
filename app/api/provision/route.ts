@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
               token: '(check server - see instructions below)',
               rootPassword: null,
               isExisting: true,
+              serverId: serverId,
             },
           });
           
@@ -230,6 +231,7 @@ runcmd:
             name: serverName,
             token: gatewayToken,
             rootPassword: rootPassword || null,
+            serverId: serverId,
           },
         });
 
