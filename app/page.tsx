@@ -16,6 +16,7 @@ export default function Wizard() {
   const [sshKey, setSshKey] = useState('');
   const [serverName, setServerName] = useState('my-openclaw');
   const [location, setLocation] = useState('fsn1');
+  const [serverType, setServerType] = useState('cax11');
   const [progress, setProgress] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [serverDetails, setServerDetails] = useState<ServerDetails | null>(null);
@@ -29,7 +30,7 @@ export default function Wizard() {
       const res = await fetch('/api/provision', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiToken, sshKey, serverName, location }),
+        body: JSON.stringify({ apiToken, sshKey, serverName, location, serverType }),
       });
 
       const reader = res.body?.getReader();
@@ -253,14 +254,41 @@ export default function Wizard() {
                     onChange={(e) => setLocation(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white"
                   >
-                    <option value="fsn1">🇩🇪 Falkenstein, Germany</option>
-                    <option value="nbg1">🇩🇪 Nuremberg, Germany</option>
-                    <option value="hel1">🇫🇮 Helsinki, Finland</option>
-                    <option value="ash">🇺🇸 Ashburn, USA</option>
-                    <option value="hil">🇺🇸 Hillsboro, USA</option>
+                    <option value="fsn1">🇩🇪 Falkenstein</option>
+                    <option value="nbg1">🇩🇪 Nuremberg</option>
+                    <option value="hel1">🇫🇮 Helsinki</option>
+                    <option value="ash">🇺🇸 Ashburn</option>
+                    <option value="hil">🇺🇸 Hillsboro</option>
                     <option value="sin">🇸🇬 Singapore</option>
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className="block text-slate-400 text-sm mb-1">Server Size</label>
+                <select
+                  value={serverType}
+                  onChange={(e) => setServerType(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white"
+                >
+                  <optgroup label="ARM (Ampere) — Best value">
+                    <option value="cax11">CAX11 — 2 vCPU, 4 GB RAM, 40 GB — €3.85/mo ⭐</option>
+                    <option value="cax21">CAX21 — 4 vCPU, 8 GB RAM, 80 GB — €7.25/mo</option>
+                    <option value="cax31">CAX31 — 8 vCPU, 16 GB RAM, 160 GB — €14.25/mo</option>
+                    <option value="cax41">CAX41 — 16 vCPU, 32 GB RAM, 320 GB — €28.45/mo</option>
+                  </optgroup>
+                  <optgroup label="x86 (Intel/AMD) — Shared">
+                    <option value="cx22">CX22 — 2 vCPU, 4 GB RAM, 40 GB — €4.35/mo</option>
+                    <option value="cx32">CX32 — 4 vCPU, 8 GB RAM, 80 GB — €8.15/mo</option>
+                    <option value="cx42">CX42 — 8 vCPU, 16 GB RAM, 160 GB — €16.15/mo</option>
+                    <option value="cx52">CX52 — 16 vCPU, 32 GB RAM, 320 GB — €32.15/mo</option>
+                  </optgroup>
+                  <optgroup label="x86 (AMD) — Dedicated">
+                    <option value="ccx13">CCX13 — 2 vCPU, 8 GB RAM, 80 GB — €12.99/mo</option>
+                    <option value="ccx23">CCX23 — 4 vCPU, 16 GB RAM, 160 GB — €25.99/mo</option>
+                    <option value="ccx33">CCX33 — 8 vCPU, 32 GB RAM, 240 GB — €51.99/mo</option>
+                  </optgroup>
+                </select>
+                <p className="text-slate-500 text-xs mt-1">CAX11 is recommended for most users</p>
               </div>
               <div className="flex gap-4">
                 <button

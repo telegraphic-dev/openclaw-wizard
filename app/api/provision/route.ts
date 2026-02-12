@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       };
 
       try {
-        const { apiToken, sshKey, serverName = 'openclaw', location: preferredLocation = 'fsn1' } = await request.json();
+        const { apiToken, sshKey, serverName = 'openclaw', location: preferredLocation = 'fsn1', serverType = 'cax11' } = await request.json();
 
         if (!apiToken) {
           send({ error: 'API token is required' });
@@ -92,7 +92,7 @@ runcmd:
             ssh_keys?: number[];
           } = {
             name: serverName,
-            server_type: 'cax11', // ARM, 2 vCPU, 4GB RAM, ~€4/mo
+            server_type: serverType,
             location,
             image: 'ubuntu-24.04',
             user_data: cloudInit,
