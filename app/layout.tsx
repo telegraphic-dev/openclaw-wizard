@@ -9,10 +9,43 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
-/** SEO metadata applied to all pages unless overridden by a nested layout. */
+/** 
+ * SEO and social sharing metadata.
+ * Open Graph tags for Facebook/LinkedIn, Twitter Card for Twitter/X.
+ */
 export const metadata: Metadata = {
   title: 'OpenClaw Setup Wizard',
-  description: 'Set up your own AI agent in minutes',
+  description: 'Get your own AI agent running in 5 minutes. No coding required.',
+  
+  // Open Graph (Facebook, LinkedIn, etc.)
+  openGraph: {
+    title: 'OpenClaw Setup Wizard',
+    description: 'Get your own AI agent running in 5 minutes. No coding required.',
+    url: 'https://hetzner-wizard.telegraphic.app',
+    siteName: 'OpenClaw',
+    images: [
+      {
+        url: 'https://assets.orany.cz/images/openclaw-wizard-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'OpenClaw Setup Wizard - Get your AI agent running in 5 minutes',
+      },
+    ],
+    locale: 'en_US',
+    type: 'website',
+  },
+  
+  // Twitter Card
+  twitter: {
+    card: 'summary_large_image',
+    title: 'OpenClaw Setup Wizard',
+    description: 'Get your own AI agent running in 5 minutes. No coding required.',
+    images: ['https://assets.orany.cz/images/openclaw-wizard-og.jpg'],
+  },
+  
+  // Additional metadata
+  metadataBase: new URL('https://hetzner-wizard.telegraphic.app'),
+  keywords: ['AI agent', 'OpenClaw', 'Hetzner', 'self-hosted', 'Telegram bot', 'Claude'],
 };
 
 /**
