@@ -8,8 +8,52 @@ interface ServerDetails {
   ip: string;
   name: string;
   token: string;
+  rootPassword?: string | null;
   isExisting?: boolean;
   serverId?: number;
+}
+
+// Crypto helpers for encrypting credentials with API token
+async function deriveKey(password: string): Promise<CryptoKey> {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: enc.encode('openclaw-wizard'), iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function encryptData(data: object, password: string): Promise<string> {
+  const key = await deriveKey(password);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder();
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    enc.encode(JSON.stringify(data))
+  );
+  const combined = new Uint8Array(iv.length + encrypted.byteLength);
+  combined.set(iv);
+  combined.set(new Uint8Array(encrypted), iv.length);
+  return btoa(String.fromCharCode(...combined));
+}
+
+async function decryptData(encrypted: string, password: string): Promise<object | null> {
+  try {
+    const key = await deriveKey(password);
+    const combined = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
+    const iv = combined.slice(0, 12);
+    const data = combined.slice(12);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+    return JSON.parse(new TextDecoder().decode(decrypted));
+  } catch {
+    return null;
+  }
 }
 
 export default function Wizard() {
@@ -22,6 +66,50 @@ export default function Wizard() {
   const [progress, setProgress] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [serverDetails, setServerDetails] = useState<ServerDetails | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+
+  // Check for existing server and stored credentials when API token is entered
+  const checkExistingServer = async (token: string) => {
+    setChecking(true);
+    setError('');
+    
+    try {
+      // First, try to decrypt stored credentials with recovery password
+      const stored = localStorage.getItem('openclaw-server');
+      if (stored && recoveryPassword) {
+        const decrypted = await decryptData(stored, recoveryPassword) as ServerDetails | null;
+        if (decrypted?.ip) {
+          setServerDetails(decrypted);
+          setStep('done');
+          setChecking(false);
+          return;
+        }
+      }
+
+      // Check Hetzner for existing server
+      const res = await fetch('/api/check-server', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiToken: token, serverName }),
+      });
+      
+      const data = await res.json();
+      
+      if (data.exists && data.server) {
+        setServerDetails(data.server);
+        setStep('done');
+      } else if (data.valid) {
+        setStep('ssh-key');
+      } else {
+        setError(data.error || 'Invalid API token');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to check server');
+    }
+    
+    setChecking(false);
+  };
 
   const startProvisioning = async () => {
     setStep('provisioning');
@@ -59,6 +147,12 @@ export default function Wizard() {
             }
             if (data.done) {
               setServerDetails(data.server);
+              // Save encrypted credentials to localStorage
+              if (data.server && recoveryPassword) {
+                encryptData(data.server, recoveryPassword).then(encrypted => {
+                  localStorage.setItem('openclaw-server', encrypted);
+                });
+              }
               setStep('done');
             }
           } catch {}
@@ -117,9 +211,26 @@ export default function Wizard() {
                   <li>About 10 minutes</li>
                 </ul>
               </div>
+              
+              <div className="bg-slate-700 rounded-lg p-4">
+                <h3 className="font-bold mb-2">🔐 Recovery Password</h3>
+                <p className="text-slate-400 text-sm mb-3">
+                  Set a password to securely save your server credentials locally. 
+                  You&apos;ll need this if your browser closes during setup.
+                </p>
+                <input
+                  type="password"
+                  value={recoveryPassword}
+                  onChange={(e) => setRecoveryPassword(e.target.value)}
+                  placeholder="Enter a recovery password"
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500"
+                />
+              </div>
+              
               <button
                 onClick={() => setStep('hetzner-account')}
-                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-lg transition"
+                disabled={!recoveryPassword}
+                className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition"
               >
                 Let&apos;s Start →
               </button>
@@ -197,6 +308,11 @@ export default function Wizard() {
                 placeholder="Paste your API token here"
                 className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500"
               />
+              {error && (
+                <div className="bg-red-900/50 border border-red-500 rounded-lg p-3">
+                  <p className="text-red-200 text-sm">{error}</p>
+                </div>
+              )}
               <div className="flex gap-4">
                 <button
                   onClick={() => setStep('hetzner-account')}
@@ -205,11 +321,11 @@ export default function Wizard() {
                   ← Back
                 </button>
                 <button
-                  onClick={() => setStep('ssh-key')}
-                  disabled={!apiToken}
+                  onClick={() => checkExistingServer(apiToken)}
+                  disabled={!apiToken || checking}
                   className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition"
                 >
-                  Next →
+                  {checking ? 'Checking...' : 'Next →'}
                 </button>
               </div>
             </div>
