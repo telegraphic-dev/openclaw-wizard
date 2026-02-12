@@ -4,6 +4,27 @@ import { useState } from 'react';
 
 type Step = 'intro' | 'hetzner-account' | 'api-token' | 'ssh-key' | 'provisioning' | 'done';
 
+// Expandable details component
+function Details({ title, children }: { title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-slate-900/50 rounded-lg border border-slate-700">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full px-4 py-3 flex items-center justify-between text-left text-slate-400 hover:text-slate-300"
+      >
+        <span className="text-sm">{title}</span>
+        <span className="text-lg">{open ? '−' : '+'}</span>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 text-slate-400 text-sm space-y-2">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface ServerDetails {
   ip: string;
   name: string;
@@ -235,6 +256,23 @@ export default function Wizard() {
                   <li>About 10 minutes</li>
                 </ul>
               </div>
+
+              <Details title="ℹ️ Why Hetzner? Is it safe?">
+                <p>
+                  <strong>Hetzner</strong> is a German cloud provider founded in 1997. They&apos;re one of Europe&apos;s 
+                  largest hosting companies with data centers in Germany, Finland, and the USA.
+                </p>
+                <p>
+                  ✓ GDPR compliant & ISO 27001 certified<br/>
+                  ✓ Used by 100,000+ customers worldwide<br/>
+                  ✓ Transparent pricing, no hidden fees<br/>
+                  ✓ Data stays in your chosen region
+                </p>
+                <p>
+                  Your server is <strong>yours</strong> — we just help you set it up. You have full root access 
+                  and can delete it anytime from the Hetzner Console.
+                </p>
+              </Details>
               
               <div className="bg-slate-700 rounded-lg p-4">
                 <h3 className="font-bold mb-2">🔐 Recovery Password</h3>
@@ -285,6 +323,22 @@ export default function Wizard() {
               >
                 Open Hetzner Console ↗
               </a>
+              
+              <Details title="ℹ️ What happens when I create an account?">
+                <p>
+                  You&apos;ll create an account on <strong>hetzner.cloud</strong> (Hetzner&apos;s cloud platform).
+                  This is separate from this wizard — Hetzner is the company that will host your server.
+                </p>
+                <p>
+                  You&apos;ll need to verify your identity with a credit card or PayPal. Hetzner may 
+                  put a small temporary hold (~€1) to verify the payment method.
+                </p>
+                <p>
+                  <strong>Billing:</strong> You only pay for what you use. The CAX11 server costs 
+                  ~€3.85/month. You can delete it anytime and billing stops immediately.
+                </p>
+              </Details>
+
               <div className="flex gap-4">
                 <button
                   onClick={() => setStep('intro')}
@@ -332,6 +386,22 @@ export default function Wizard() {
                 placeholder="Paste your API token here"
                 className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500"
               />
+              <Details title="ℹ️ What is an API token?">
+                <p>
+                  An API token is like a password that allows this wizard to create a server on your behalf.
+                  It&apos;s scoped to your Hetzner project and can only manage resources within that project.
+                </p>
+                <p>
+                  <strong>Security note:</strong> This token is only sent directly to Hetzner&apos;s API. 
+                  We never store it on our servers. After setup, you should delete the token from 
+                  Hetzner Console for security.
+                </p>
+                <p>
+                  The token needs &quot;Read &amp; Write&quot; permission so we can create the server 
+                  and upload your SSH key.
+                </p>
+              </Details>
+
               {error && (
                 <div className="bg-red-900/50 border border-red-500 rounded-lg p-3">
                   <p className="text-red-200 text-sm">{error}</p>
@@ -432,6 +502,26 @@ export default function Wizard() {
                 </select>
                 <p className="text-slate-500 text-xs mt-1">CAX11 is recommended for most users</p>
               </div>
+              <Details title="ℹ️ What happens when I click Create Server?">
+                <p>
+                  We&apos;ll use your API token to:
+                </p>
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>Upload your SSH key (if provided) to Hetzner</li>
+                  <li>Create a new server with Ubuntu 24.04</li>
+                  <li>Run a bootstrap script that installs OpenClaw</li>
+                  <li>Create an &apos;openclaw&apos; user for you to log in with</li>
+                </ol>
+                <p>
+                  The whole process takes about 2-3 minutes. Your server will be ready to use
+                  as soon as it&apos;s done.
+                </p>
+                <p>
+                  <strong>Location:</strong> Choose a location close to you for lower latency.
+                  European locations (Falkenstein, Nuremberg) are often cheapest.
+                </p>
+              </Details>
+
               <div className="flex gap-4">
                 <button
                   onClick={() => setStep('api-token')}
@@ -587,6 +677,28 @@ export default function Wizard() {
                   Then open <a href="http://127.0.0.1:18789" className="text-orange-400 underline">http://127.0.0.1:18789</a>
                 </p>
               </div>
+
+              <div className="bg-red-900/20 border border-red-800 rounded-lg p-4">
+                <h3 className="font-bold mb-2 text-red-300">🔒 Security: Delete Your API Token</h3>
+                <p className="text-slate-300 text-sm mb-2">
+                  The API token is no longer needed. Delete it from Hetzner Console for security:
+                </p>
+                <ol className="list-decimal list-inside text-slate-400 text-sm space-y-1">
+                  <li>Go to <a href="https://console.hetzner.cloud/" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">Hetzner Console</a></li>
+                  <li>Select your project → Security → API Tokens</li>
+                  <li>Delete the &quot;OpenClaw&quot; token</li>
+                </ol>
+                <p className="text-slate-400 text-xs mt-2">
+                  You can always create a new token if needed later.
+                </p>
+              </div>
+
+              <a
+                href="/cleanup"
+                className="block text-center text-slate-400 text-sm hover:text-slate-300 underline"
+              >
+                📖 How to delete your server later
+              </a>
 
               <button
                 onClick={() => {
