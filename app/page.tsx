@@ -34,49 +34,6 @@ interface ServerDetails {
   serverId?: number;
 }
 
-// Crypto helpers for encrypting credentials with API token
-async function deriveKey(password: string): Promise<CryptoKey> {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']
-  );
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: enc.encode('openclaw-wizard'), iterations: 100000, hash: 'SHA-256' },
-    keyMaterial,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  );
-}
-
-async function encryptData(data: object, password: string): Promise<string> {
-  const key = await deriveKey(password);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const enc = new TextEncoder();
-  const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    enc.encode(JSON.stringify(data))
-  );
-  const combined = new Uint8Array(iv.length + encrypted.byteLength);
-  combined.set(iv);
-  combined.set(new Uint8Array(encrypted), iv.length);
-  return btoa(Array.from(combined).map(b => String.fromCharCode(b)).join(''));
-}
-
-async function decryptData(encrypted: string, password: string): Promise<object | null> {
-  try {
-    const key = await deriveKey(password);
-    const combined = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
-    const iv = combined.slice(0, 12);
-    const data = combined.slice(12);
-    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
-    return JSON.parse(new TextDecoder().decode(decrypted));
-  } catch {
-    return null;
-  }
-}
-
 export default function Wizard() {
   const [step, setStep] = useState<Step>('intro');
   const [apiToken, setApiToken] = useState('');
@@ -88,31 +45,6 @@ export default function Wizard() {
   const [error, setError] = useState('');
   const [serverDetails, setServerDetails] = useState<ServerDetails | null>(null);
   const [checking, setChecking] = useState(false);
-  const [recoveryPassword, setRecoveryPassword] = useState('');
-  const [consoleLoading, setConsoleLoading] = useState(false);
-
-  // Request console access and open Hetzner console
-  const openConsole = async () => {
-    if (!serverDetails?.serverId || !apiToken) {
-      window.open('https://console.hetzner.cloud/', '_blank');
-      return;
-    }
-    
-    setConsoleLoading(true);
-    try {
-      // Request console access first (activates the console session)
-      await fetch('/api/console-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiToken, serverId: serverDetails.serverId }),
-      });
-      // Open the Hetzner console - user should be redirected to their server
-      window.open('https://console.hetzner.cloud/', '_blank');
-    } catch {
-      window.open('https://console.hetzner.cloud/', '_blank');
-    }
-    setConsoleLoading(false);
-  };
 
   // Check for existing server and stored credentials when API token is entered
   const checkExistingServer = async (token: string) => {
@@ -120,18 +52,6 @@ export default function Wizard() {
     setError('');
     
     try {
-      // First, try to decrypt stored credentials with recovery password
-      const stored = localStorage.getItem('openclaw-server');
-      if (stored && recoveryPassword) {
-        const decrypted = await decryptData(stored, recoveryPassword) as ServerDetails | null;
-        if (decrypted?.ip) {
-          setServerDetails(decrypted);
-          setStep('done');
-          setChecking(false);
-          return;
-        }
-      }
-
       // Check Hetzner for existing server
       const res = await fetch('/api/check-server', {
         method: 'POST',
@@ -192,12 +112,6 @@ export default function Wizard() {
             }
             if (data.done) {
               setServerDetails(data.server);
-              // Save encrypted credentials to localStorage
-              if (data.server && recoveryPassword) {
-                encryptData(data.server, recoveryPassword).then(encrypted => {
-                  localStorage.setItem('openclaw-server', encrypted);
-                });
-              }
               setStep('done');
             }
           } catch {}
@@ -274,25 +188,9 @@ export default function Wizard() {
                 </p>
               </Details>
               
-              <div className="bg-slate-700 rounded-lg p-4">
-                <h3 className="font-bold mb-2">🔐 Recovery Password</h3>
-                <p className="text-slate-400 text-sm mb-3">
-                  Set a password to securely save your server credentials locally. 
-                  You&apos;ll need this if your browser closes during setup.
-                </p>
-                <input
-                  type="password"
-                  value={recoveryPassword}
-                  onChange={(e) => setRecoveryPassword(e.target.value)}
-                  placeholder="Enter a recovery password"
-                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500"
-                />
-              </div>
-              
               <button
                 onClick={() => setStep('hetzner-account')}
-                disabled={!recoveryPassword}
-                className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition"
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-lg transition"
               >
                 Let&apos;s Start →
               </button>
@@ -428,9 +326,9 @@ export default function Wizard() {
           {/* Step: SSH Key */}
           {step === 'ssh-key' && (
             <div className="space-y-6">
-              <h2 className="text-2xl font-bold">Step 3: SSH Key (Optional)</h2>
+              <h2 className="text-2xl font-bold">Step 3: SSH Key</h2>
               <p className="text-slate-300">
-                An SSH key lets you securely connect to your server.
+                Your SSH key is required to securely connect to your server.
               </p>
               <div className="bg-slate-700 rounded-lg p-4">
                 <p className="text-slate-300 mb-3">On your computer, open Terminal and run:</p>
@@ -531,7 +429,7 @@ export default function Wizard() {
                 </button>
                 <button
                   onClick={startProvisioning}
-                  disabled={!apiToken}
+                  disabled={!apiToken || !sshKey}
                   className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition"
                 >
                   🚀 Create Server
@@ -622,32 +520,25 @@ export default function Wizard() {
               )}
 
               <div className="bg-blue-900/30 border border-blue-500 rounded-lg p-4">
-                <h3 className="font-bold mb-2">🖥️ Connect to Your Server</h3>
+                <h3 className="font-bold mb-2">🖥️ Connect via SSH</h3>
                 <p className="text-slate-300 text-sm mb-3">
-                  No SSH client? Use Hetzner&apos;s built-in web console:
+                  Open Terminal on your computer and run:
                 </p>
-                <button
-                  onClick={openConsole}
-                  disabled={consoleLoading}
-                  className="block w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-bold py-2 px-4 rounded-lg text-center transition"
-                >
-                  {consoleLoading ? 'Opening...' : 'Open Hetzner Console →'}
-                </button>
-                <p className="text-slate-400 text-xs mt-2">
-                  In Hetzner: Your project → <strong>{serverDetails.name}</strong> → Console tab
-                </p>
+                <code className="block bg-slate-900 p-3 rounded text-green-400 text-sm">
+                  ssh openclaw@{serverDetails.ip}
+                </code>
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(String(serverDetails.serverId));
+                    navigator.clipboard.writeText(`ssh openclaw@${serverDetails.ip}`);
                   }}
-                  className="text-blue-400 text-xs mt-1 hover:underline"
+                  className="text-blue-400 text-xs mt-2 hover:underline"
                 >
-                  📋 Copy Server ID: {serverDetails.serverId}
+                  📋 Copy SSH command
                 </button>
               </div>
 
               <div className="bg-slate-700 rounded-lg p-4">
-                <h3 className="font-bold mb-3">Next Steps (in the console):</h3>
+                <h3 className="font-bold mb-3">Next Steps (after connecting):</h3>
                 <ol className="list-decimal list-inside text-slate-300 space-y-3">
                   <li>
                     Configure your channels (Telegram, etc.):
@@ -662,9 +553,6 @@ export default function Wizard() {
                     </code>
                   </li>
                 </ol>
-                <p className="text-slate-400 text-sm mt-3">
-                  Or via SSH: <code className="text-green-400">ssh openclaw@{serverDetails.ip}</code>
-                </p>
               </div>
 
               <div className="bg-slate-700 rounded-lg p-4">
