@@ -40,7 +40,7 @@ async function encryptData(data: object, password: string): Promise<string> {
   const combined = new Uint8Array(iv.length + encrypted.byteLength);
   combined.set(iv);
   combined.set(new Uint8Array(encrypted), iv.length);
-  return btoa(String.fromCharCode(...combined));
+  return btoa(Array.from(combined).map(b => String.fromCharCode(b)).join(''));
 }
 
 async function decryptData(encrypted: string, password: string): Promise<object | null> {
