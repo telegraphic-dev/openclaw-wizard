@@ -8,7 +8,8 @@
  */
 
 /** GitHub issues URL for support links. */
-const GITHUB_ISSUES = 'https://github.com/telegraphic-dev/openclaw-wizard/issues';
+const GITHUB_REPO = 'https://github.com/telegraphic-dev/openclaw-wizard';
+const GITHUB_ISSUES = `${GITHUB_REPO}/issues`;
 
 /**
  * CleanupPage — guides users through server deletion.
@@ -101,9 +102,11 @@ export default function CleanupPage() {
           </div>
         </div>
 
-        {/* Footer with support link */}
+        {/* Footer with source and support links */}
         <p className="text-center text-slate-500 text-sm mt-8">
-          Questions? Open an issue on <a href={GITHUB_ISSUES} className="text-orange-400 underline">GitHub</a>
+          <a href={GITHUB_REPO} className="text-slate-400 hover:text-slate-300 underline">View Source</a>
+          {' · '}
+          <a href={GITHUB_ISSUES} className="text-orange-400 underline">Need Help?</a>
         </p>
       </div>
     </main>

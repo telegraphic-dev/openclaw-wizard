@@ -742,9 +742,11 @@ SSH: ssh openclaw@${serverDetails.ip}`;
           )}
         </div>
 
-        {/* Footer with support link */}
+        {/* Footer with source and support links */}
         <p className="text-center text-slate-500 text-sm mt-8">
-          Need help? Open an issue on <a href={GITHUB_ISSUES} className="text-orange-400 underline">GitHub</a>
+          <a href={GITHUB_REPO} className="text-slate-400 hover:text-slate-300 underline">View Source</a>
+          {' · '}
+          <a href={GITHUB_ISSUES} className="text-orange-400 underline">Need Help?</a>
         </p>
       </div>
     </main>
