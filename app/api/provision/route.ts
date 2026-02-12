@@ -72,46 +72,70 @@ runcmd:
   - curl -fsSL ${BOOTSTRAP_URL} | bash > /var/log/openclaw-bootstrap.log 2>&1
   - echo "BOOTSTRAP_COMPLETE" >> /var/log/openclaw-bootstrap.log`;
 
-        // Create server
+        // Create server - try multiple locations
         send({ progress: '🖥️ Creating server...' });
-        const serverPayload: {
-          name: string;
-          server_type: string;
-          location: string;
-          image: string;
-          user_data: string;
-          ssh_keys?: number[];
-        } = {
-          name: serverName,
-          server_type: 'cax11', // ARM, 2 vCPU, 4GB RAM, ~€4/mo
-          location: 'fsn1',
-          image: 'ubuntu-24.04',
-          user_data: cloudInit,
-        };
         
-        if (sshKeyId) {
-          serverPayload.ssh_keys = [sshKeyId];
-        }
+        const locations = ['fsn1', 'nbg1', 'hel1', 'ash', 'hil'];
+        let createRes: Response | null = null;
+        let createData: { server: { id: number; public_net: { ipv4: { ip: string } } }; root_password?: string } | null = null;
+        let usedLocation = '';
+        
+        for (const location of locations) {
+          const serverPayload: {
+            name: string;
+            server_type: string;
+            location: string;
+            image: string;
+            user_data: string;
+            ssh_keys?: number[];
+          } = {
+            name: serverName,
+            server_type: 'cax11', // ARM, 2 vCPU, 4GB RAM, ~€4/mo
+            location,
+            image: 'ubuntu-24.04',
+            user_data: cloudInit,
+          };
+          
+          if (sshKeyId) {
+            serverPayload.ssh_keys = [sshKeyId];
+          }
 
-        const createRes = await fetch(`${HETZNER_API}/servers`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(serverPayload),
-        });
+          createRes = await fetch(`${HETZNER_API}/servers`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(serverPayload),
+          });
 
-        if (!createRes.ok) {
+          if (createRes.ok) {
+            createData = await createRes.json();
+            usedLocation = location;
+            break;
+          }
+          
           const err = await createRes.json();
+          // If location disabled or unavailable, try next
+          if (err.error?.message?.includes('location') || err.error?.code === 'unavailable') {
+            send({ progress: `⚠️ Location ${location} unavailable, trying next...` });
+            continue;
+          }
+          
+          // Other errors - fail immediately
           send({ error: `Failed to create server: ${err.error?.message || 'Unknown error'}` });
           controller.close();
           return;
         }
 
-        const createData = await createRes.json();
+        if (!createData) {
+          send({ error: 'Failed to create server: No available locations. Please check your Hetzner account settings.' });
+          controller.close();
+          return;
+        }
+
         const serverId = createData.server.id;
         const serverIp = createData.server.public_net.ipv4.ip;
         const rootPassword = createData.root_password;
 
-        send({ progress: `✓ Server created (IP: ${serverIp})` });
+        send({ progress: `✓ Server created in ${usedLocation} (IP: ${serverIp})` });
         send({ progress: '⏳ Waiting for server to boot...' });
 
         // Wait for server to be running
