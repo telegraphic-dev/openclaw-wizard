@@ -372,15 +372,27 @@ export default function Wizard() {
                 </div>
               </div>
 
+              <div className="bg-blue-900/30 border border-blue-500 rounded-lg p-4">
+                <h3 className="font-bold mb-2">🖥️ Connect to Your Server</h3>
+                <p className="text-slate-300 text-sm mb-3">
+                  No SSH client? Use Hetzner&apos;s built-in web console:
+                </p>
+                <a
+                  href="https://console.hetzner.cloud/projects"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-center transition"
+                >
+                  Open Hetzner Console →
+                </a>
+                <p className="text-slate-400 text-xs mt-2">
+                  Click your server → Console tab → Opens terminal in browser
+                </p>
+              </div>
+
               <div className="bg-slate-700 rounded-lg p-4">
-                <h3 className="font-bold mb-3">Next Steps:</h3>
+                <h3 className="font-bold mb-3">Next Steps (in the console):</h3>
                 <ol className="list-decimal list-inside text-slate-300 space-y-3">
-                  <li>
-                    Open Terminal and connect:
-                    <code className="block bg-slate-900 p-2 rounded mt-1 text-green-400 text-sm">
-                      ssh openclaw@{serverDetails.ip}
-                    </code>
-                  </li>
                   <li>
                     Configure your channels (Telegram, etc.):
                     <code className="block bg-slate-900 p-2 rounded mt-1 text-green-400 text-sm">
@@ -394,6 +406,9 @@ export default function Wizard() {
                     </code>
                   </li>
                 </ol>
+                <p className="text-slate-400 text-sm mt-3">
+                  Or via SSH: <code className="text-green-400">ssh openclaw@{serverDetails.ip}</code>
+                </p>
               </div>
 
               <div className="bg-slate-700 rounded-lg p-4">
