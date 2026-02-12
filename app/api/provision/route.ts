@@ -1,54 +1,75 @@
 /**
- * Server Provisioning API Route
- * 
- * This endpoint handles the complete server provisioning flow:
- * 1. Validates the Hetzner API token
- * 2. Checks for existing servers with the same name
- * 3. Uploads the user's SSH key to Hetzner
- * 4. Creates a new server with cloud-init bootstrap script
- * 5. Waits for the server to be running
- * 6. Returns connection details
- * 
- * The endpoint streams progress updates as newline-delimited JSON,
- * allowing the frontend to show real-time status.
- * 
- * @example Request body:
- * {
- *   apiToken: "hetzner-api-token",
- *   sshKey: "ssh-ed25519 AAAA...",
- *   serverName: "my-openclaw",
- *   location: "fsn1",
- *   serverType: "cax11"
- * }
- * 
- * @example Response stream:
- * {"progress": "Verifying API token..."}
- * {"progress": "Creating server..."}
- * {"done": true, "server": {"ip": "1.2.3.4", ...}}
+ * @file Server provisioning API route.
+ *
+ * POST /api/provision
+ *
+ * This is the core provisioning endpoint. It accepts a Hetzner API token,
+ * SSH public key, and server preferences, then creates a cloud server via
+ * the Hetzner Cloud API v1.
+ *
+ * **Response format:** NDJSON stream (newline-delimited JSON).
+ * Each line is a JSON object with one of:
+ * - `{ progress: "status message" }` — real-time progress update
+ * - `{ error: "error message" }` — fatal error, stream ends
+ * - `{ done: true, server: ServerDetails }` — success, stream ends
+ *
+ * **Flow:**
+ * 1. Validate the API token against Hetzner
+ * 2. Check if a server with the given name already exists (resume support)
+ * 3. Upload the SSH public key (or find an existing matching key)
+ * 4. Create the server with a cloud-init script that runs the bootstrap
+ * 5. Wait for the server to reach "running" status
+ * 6. Wait ~2 min for the bootstrap script to install OpenClaw
+ * 7. Return the server IP, name, and a generated gateway token
+ *
+ * **Security:** The API token is held in memory only for the duration of
+ * this request. It is never logged or persisted.
  */
+
 import { NextRequest } from 'next/server';
 
-/** Hetzner Cloud API base URL */
+/** Base URL for all Hetzner Cloud API v1 calls. */
 const HETZNER_API = 'https://api.hetzner.cloud/v1';
 
-/** Bootstrap script URL - installs OpenClaw on the server */
+/**
+ * URL to the bootstrap shell script that cloud-init runs on first boot.
+ * This script installs OpenClaw, creates the `openclaw` user, etc.
+ */
 const BOOTSTRAP_URL = 'https://raw.githubusercontent.com/telegraphic-dev/openclaw-hetzner-bootstrap/main/bootstrap.sh';
 
 /**
- * POST handler for server provisioning.
- * Streams progress updates and returns server details on completion.
+ * Handles POST requests to provision a new Hetzner server.
+ *
+ * @param request - Incoming request with JSON body:
+ *   - `apiToken` (string, required): Hetzner API token with read+write access
+ *   - `sshKey` (string, optional): SSH public key (e.g. "ssh-ed25519 AAAA...")
+ *   - `serverName` (string, default "openclaw"): Desired server hostname
+ *   - `location` (string, default "fsn1"): Preferred datacenter location code
+ *   - `serverType` (string, default "cax11"): Hetzner server type
+ *
+ * @returns A streaming Response with NDJSON progress updates.
  */
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
-  
+
   const stream = new ReadableStream({
     async start(controller) {
+      /**
+       * Helper to send a JSON object as one line of the NDJSON stream.
+       * @param data - Object to serialize and send.
+       */
       const send = (data: object) => {
         controller.enqueue(encoder.encode(JSON.stringify(data) + '\n'));
       };
 
       try {
-        const { apiToken, sshKey, serverName = 'openclaw', location: preferredLocation = 'fsn1', serverType = 'cax11' } = await request.json();
+        const {
+          apiToken,
+          sshKey,
+          serverName = 'openclaw',
+          location: preferredLocation = 'fsn1',
+          serverType = 'cax11',
+        } = await request.json();
 
         if (!apiToken) {
           send({ error: 'API token is required' });
@@ -56,12 +77,16 @@ export async function POST(request: NextRequest) {
           return;
         }
 
+        /** Auth headers reused for all Hetzner API calls in this request. */
         const headers = {
           'Authorization': `Bearer ${apiToken}`,
           'Content-Type': 'application/json',
         };
 
-        // Test API connection and check for existing server
+        // ── Step 1: Validate API token ────────────────────────────────────
+        // We validate by listing servers — if the token is invalid, Hetzner
+        // returns 403. As a bonus, we get the server list to check for
+        // existing servers in the same call.
         send({ progress: '🔑 Verifying API token...' });
         const testRes = await fetch(`${HETZNER_API}/servers`, { headers });
         if (!testRes.ok) {
@@ -69,28 +94,31 @@ export async function POST(request: NextRequest) {
           controller.close();
           return;
         }
-        
-        // Check if server with this name already exists
+
+        // ── Step 2: Check for existing server (resume support) ────────────
+        // If the user already ran the wizard and a server with this name
+        // exists, we skip creation and show existing server details.
         const serversData = await testRes.json();
-        const existingServer = serversData.servers?.find((s: { name: string }) => s.name === serverName);
-        
+        const existingServer = serversData.servers?.find(
+          (s: { name: string }) => s.name === serverName
+        );
+
         if (existingServer) {
           send({ progress: `✓ Found existing server "${serverName}"` });
-          
-          // Resume from existing server
+
           const serverId = existingServer.id;
           const serverIp = existingServer.public_net?.ipv4?.ip;
-          
+
           if (!serverIp) {
             send({ error: 'Existing server has no IP. Please delete it in Hetzner Console and try again.' });
             controller.close();
             return;
           }
-          
-          // Check server status
+
+          // Wait for the server to be running (it might be initializing)
           if (existingServer.status !== 'running') {
             send({ progress: `⏳ Server is ${existingServer.status}, waiting for it to be ready...` });
-            
+
             for (let i = 0; i < 60; i++) {
               await new Promise(r => setTimeout(r, 3000));
               const statusRes = await fetch(`${HETZNER_API}/servers/${serverId}`, { headers });
@@ -108,12 +136,11 @@ export async function POST(request: NextRequest) {
           } else {
             send({ progress: '✓ Server is running' });
           }
-          
-          // Server exists and is running - show details immediately
-          // User can check server for the actual token
+
+          // Return existing server details — user must check server for token
           send({ progress: '✓ Server is already set up!' });
           send({ progress: 'Showing connection details...' });
-          
+
           send({
             done: true,
             server: {
@@ -125,14 +152,16 @@ export async function POST(request: NextRequest) {
               serverId: serverId,
             },
           });
-          
+
           controller.close();
           return;
         }
-        
+
         send({ progress: '✓ API token valid' });
 
-        // Upload SSH key if provided
+        // ── Step 3: Upload SSH key ────────────────────────────────────────
+        // We try to upload the key. If it already exists (same fingerprint),
+        // Hetzner returns 409 — so we fall back to searching existing keys.
         let sshKeyId: number | null = null;
         if (sshKey && sshKey.startsWith('ssh-')) {
           send({ progress: '🔐 Uploading SSH key...' });
@@ -142,18 +171,19 @@ export async function POST(request: NextRequest) {
             headers,
             body: JSON.stringify({ name: keyName, public_key: sshKey.trim() }),
           });
-          
+
           if (keyRes.ok) {
             const keyData = await keyRes.json();
             sshKeyId = keyData.ssh_key.id;
             send({ progress: '✓ SSH key uploaded' });
           } else {
-            // Key might already exist
+            // Key might already exist — search by public key prefix
+            // (first two space-separated parts: type + base64 data)
             const existingKeys = await fetch(`${HETZNER_API}/ssh_keys`, { headers });
             const keysData = await existingKeys.json();
             const keyPrefix = sshKey.trim().split(' ').slice(0, 2).join(' ');
-            const existing = keysData.ssh_keys?.find((k: { public_key: string }) => 
-              k.public_key.startsWith(keyPrefix)
+            const existing = keysData.ssh_keys?.find(
+              (k: { public_key: string }) => k.public_key.startsWith(keyPrefix)
             );
             if (existing) {
               sshKeyId = existing.id;
@@ -162,23 +192,28 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Cloud-init script
+        // ── Step 4: Create the server ─────────────────────────────────────
+        // cloud-init runs the bootstrap script on first boot. This installs
+        // OpenClaw, creates the openclaw user, and configures the gateway.
         const cloudInit = `#cloud-config
 runcmd:
   - curl -fsSL ${BOOTSTRAP_URL} | bash > /var/log/openclaw-bootstrap.log 2>&1
   - echo "BOOTSTRAP_COMPLETE" >> /var/log/openclaw-bootstrap.log`;
 
-        // Create server - try multiple locations
         send({ progress: '🖥️ Creating server...' });
-        
-        // Put preferred location first, then fallbacks
+
+        // Try preferred location first, then fall back to others.
+        // Some locations may be disabled or at capacity.
         const allLocations = ['fsn1', 'nbg1', 'hel1', 'ash', 'hil', 'sin'];
         const locations = [preferredLocation, ...allLocations.filter(l => l !== preferredLocation)];
         let createRes: Response | null = null;
-        let createData: { server: { id: number; public_net: { ipv4: { ip: string } } }; root_password?: string } | null = null;
+        let createData: {
+          server: { id: number; public_net: { ipv4: { ip: string } } };
+          root_password?: string;
+        } | null = null;
         let usedLocation = '';
-        
-        for (const location of locations) {
+
+        for (const loc of locations) {
           const serverPayload: {
             name: string;
             server_type: string;
@@ -189,11 +224,12 @@ runcmd:
           } = {
             name: serverName,
             server_type: serverType,
-            location,
+            location: loc,
             image: 'ubuntu-24.04',
             user_data: cloudInit,
           };
-          
+
+          // Only attach SSH key if we have one uploaded/found
           if (sshKeyId) {
             serverPayload.ssh_keys = [sshKeyId];
           }
@@ -206,18 +242,18 @@ runcmd:
 
           if (createRes.ok) {
             createData = await createRes.json();
-            usedLocation = location;
+            usedLocation = loc;
             break;
           }
-          
+
           const err = await createRes.json();
-          // If location disabled or unavailable, try next
+          // Location-specific errors → try next location
           if (err.error?.message?.includes('location') || err.error?.code === 'unavailable') {
-            send({ progress: `⚠️ Location ${location} unavailable, trying next...` });
+            send({ progress: `⚠️ Location ${loc} unavailable, trying next...` });
             continue;
           }
-          
-          // Other errors - fail immediately
+
+          // Other errors (e.g. quota exceeded, invalid type) → fail immediately
           send({ error: `Failed to create server: ${err.error?.message || 'Unknown error'}` });
           controller.close();
           return;
@@ -234,9 +270,11 @@ runcmd:
         const rootPassword = createData.root_password;
 
         send({ progress: `✓ Server created in ${usedLocation} (IP: ${serverIp})` });
+
+        // ── Step 5: Wait for server to boot ───────────────────────────────
+        // Poll the server status every 3 seconds until it's "running".
         send({ progress: '⏳ Waiting for server to boot...' });
 
-        // Wait for server to be running
         for (let i = 0; i < 60; i++) {
           await new Promise(r => setTimeout(r, 3000));
           const statusRes = await fetch(`${HETZNER_API}/servers/${serverId}`, { headers });
@@ -247,15 +285,18 @@ runcmd:
           }
         }
 
+        // ── Step 6: Wait for bootstrap to complete ────────────────────────
+        // We can't SSH from a serverless/edge environment, so we simply wait
+        // a fixed amount of time for the cloud-init bootstrap to finish.
+        // In a production setup, you'd poll an HTTP endpoint on the server.
         send({ progress: '🔧 Installing OpenClaw (this takes 2-3 minutes)...' });
-        
-        // We can't SSH from serverless, so just wait and assume it works
-        // In production, you'd use a status webhook or poll an endpoint
-        await new Promise(r => setTimeout(r, 120000)); // Wait 2 minutes
+        await new Promise(r => setTimeout(r, 120000)); // 2 minutes
 
         send({ progress: '✓ Installation complete!' });
 
-        // Generate a token (in reality we'd fetch it from the server)
+        // ── Step 7: Generate a gateway token ──────────────────────────────
+        // In reality the bootstrap script generates the real token on the
+        // server. This is a placeholder that the user will replace.
         const gatewayToken = Array.from(crypto.getRandomValues(new Uint8Array(32)))
           .map(b => b.toString(16).padStart(2, '0')).join('');
 
@@ -269,7 +310,6 @@ runcmd:
             serverId: serverId,
           },
         });
-
       } catch (error) {
         send({ error: error instanceof Error ? error.message : 'Unknown error occurred' });
       }

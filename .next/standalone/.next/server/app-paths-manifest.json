@@ -1,8 +1,8 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
   "/api/check-server/route": "app/api/check-server/route.js",
+  "/api/console-url/route": "app/api/console-url/route.js",
   "/api/provision/route": "app/api/provision/route.js",
-  "/page": "app/page.js",
   "/cleanup/page": "app/cleanup/page.js",
-  "/api/console-url/route": "app/api/console-url/route.js"
+  "/page": "app/page.js"
 }

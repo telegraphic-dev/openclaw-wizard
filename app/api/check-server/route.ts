@@ -1,30 +1,36 @@
 /**
- * Check Server API Route
- * 
- * Validates a Hetzner API token and checks if a server with
- * the given name already exists. This is used to:
- * 
- * 1. Validate the API token before proceeding
- * 2. Detect existing servers to skip provisioning
- * 3. Allow resuming if the wizard was interrupted
- * 
- * @example Request:
+ * @file API route to validate a Hetzner API token and detect existing servers.
+ *
  * POST /api/check-server
- * { "apiToken": "...", "serverName": "my-openclaw" }
- * 
- * @example Response (new server):
- * { "valid": true, "exists": false }
- * 
- * @example Response (existing server):
- * { "valid": true, "exists": true, "server": { "ip": "...", ... } }
+ *
+ * Called when the user submits their API token in the wizard (step 2 → step 3).
+ * It serves two purposes:
+ * 1. Validates the token by making a test call to Hetzner's API
+ * 2. Checks if a server with the expected name already exists
+ *
+ * If a running server is found, the wizard can skip straight to the "done"
+ * step instead of re-provisioning. This makes the wizard idempotent — users
+ * can safely revisit it without creating duplicate servers.
+ *
+ * @returns JSON response:
+ *   - `{ valid: false, error: "..." }` — token is invalid
+ *   - `{ valid: true, exists: false }` — token works, no existing server
+ *   - `{ valid: true, exists: true, server: { ip, name, serverId, ... } }` — server found
  */
+
 import { NextRequest, NextResponse } from 'next/server';
 
-/** Hetzner Cloud API base URL */
+/** Base URL for Hetzner Cloud API v1. */
 const HETZNER_API = 'https://api.hetzner.cloud/v1';
 
 /**
- * POST handler to validate token and check for existing servers.
+ * Validates a Hetzner API token and optionally detects an existing server.
+ *
+ * @param request - POST body with:
+ *   - `apiToken` (string, required): The Hetzner API token to validate
+ *   - `serverName` (string, default "my-openclaw"): Server name to search for
+ *
+ * @returns JSON with validation result and optional server details.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -39,19 +45,25 @@ export async function POST(request: NextRequest) {
       'Content-Type': 'application/json',
     };
 
-    // Check API token and look for existing server
+    // List all servers — this both validates the token and gives us the
+    // server list to search for an existing server in a single API call.
     const res = await fetch(`${HETZNER_API}/servers`, { headers });
-    
+
     if (!res.ok) {
       return NextResponse.json({ valid: false, error: 'Invalid API token' });
     }
 
     const data = await res.json();
-    const existingServer = data.servers?.find((s: { name: string }) => s.name === serverName);
+
+    // Search for a server matching the expected name
+    const existingServer = data.servers?.find(
+      (s: { name: string }) => s.name === serverName
+    );
 
     if (existingServer) {
       const serverIp = existingServer.public_net?.ipv4?.ip;
-      
+
+      // Only report as "existing" if it's actually running with an IP
       if (existingServer.status === 'running' && serverIp) {
         return NextResponse.json({
           valid: true,
@@ -67,13 +79,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // No existing server, token is valid
+    // Token is valid, no usable existing server found
     return NextResponse.json({ valid: true, exists: false });
-    
   } catch (error) {
-    return NextResponse.json({ 
-      valid: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+    return NextResponse.json({
+      valid: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 }

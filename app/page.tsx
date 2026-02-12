@@ -1,40 +1,48 @@
 /**
- * OpenClaw Hetzner Setup Wizard
- * 
- * A step-by-step wizard that guides users through deploying their own OpenClaw
- * AI agent on Hetzner Cloud. The wizard handles:
- * 
- * 1. Account setup guidance (external Hetzner registration)
- * 2. API token collection and validation
- * 3. SSH key upload for secure access
- * 4. Server provisioning via Hetzner Cloud API
- * 5. OpenClaw installation via cloud-init bootstrap script
- * 
- * @see https://github.com/telegraphic-dev/openclaw-wizard
- * @see https://github.com/telegraphic-dev/openclaw-hetzner-bootstrap
+ * @file Main wizard page — the heart of the OpenClaw Setup Wizard.
+ *
+ * This is a single-page, multi-step wizard implemented as a client component.
+ * It guides users through:
+ *   1. Intro — explains what they'll get and what they need
+ *   2. Hetzner Account — links to Hetzner registration
+ *   3. API Token — collects and validates a Hetzner API token
+ *   4. SSH Key — collects SSH public key and server preferences
+ *   5. Provisioning — streams real-time progress from /api/provision
+ *   6. Done — shows connection details and next steps
+ *
+ * The wizard can also detect an existing server (by name) and skip straight
+ * to the "Done" step, making it safe to reload or re-run.
+ *
+ * @module page
  */
 'use client';
 
 import { useState } from 'react';
 
 /**
- * Wizard steps in order of progression.
- * - intro: Welcome screen with overview
- * - hetzner-account: Guide to create Hetzner account
- * - api-token: Collect and validate Hetzner API token
- * - ssh-key: Collect SSH public key and server configuration
- * - provisioning: Server creation in progress
- * - done: Success screen with connection instructions
+ * All possible wizard steps, in order.
+ * The step determines which UI panel is rendered.
  */
 type Step = 'intro' | 'hetzner-account' | 'api-token' | 'ssh-key' | 'provisioning' | 'done';
 
+/** Ordered array of steps — used for the progress indicator. */
+const STEPS: Step[] = ['intro', 'hetzner-account', 'api-token', 'ssh-key', 'provisioning', 'done'];
+
 /**
- * Expandable "Learn More" component for additional context.
- * Used throughout the wizard to provide detailed explanations
- * without cluttering the main UI.
- * 
- * @param title - The clickable header text
- * @param children - Content shown when expanded
+ * GitHub repository URL — used for the "star" CTA and support links.
+ */
+const GITHUB_REPO = 'https://github.com/telegraphic-dev/openclaw-wizard';
+const GITHUB_ISSUES = `${GITHUB_REPO}/issues`;
+
+// ─── Reusable Components ────────────────────────────────────────────────────
+
+/**
+ * An expandable/collapsible details panel.
+ * Used throughout the wizard to provide optional context (e.g. "Why Hetzner?")
+ * without cluttering the main flow.
+ *
+ * @param props.title - The always-visible header text.
+ * @param props.children - Content revealed when expanded.
  */
 function Details({ title, children }: { title: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -56,6 +64,18 @@ function Details({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+/**
+ * Server details returned after provisioning or detection.
+ *
+ * @property ip - Public IPv4 address of the server.
+ * @property name - Hetzner server name (e.g. "my-openclaw").
+ * @property token - Gateway token (or placeholder if existing server).
+ * @property rootPassword - Root password (only for new servers without SSH key).
+ * @property isExisting - True if the server was found already running.
+ * @property serverId - Hetzner server ID (for console-url API).
+ */
 interface ServerDetails {
   ip: string;
   name: string;
@@ -65,37 +85,79 @@ interface ServerDetails {
   serverId?: number;
 }
 
+// ─── Main Wizard Component ──────────────────────────────────────────────────
+
+/**
+ * Wizard — the main exported component rendered at `/`.
+ *
+ * State management is simple useState hooks (no external state library needed
+ * for a linear wizard flow). Each step renders conditionally based on `step`.
+ */
 export default function Wizard() {
+  // ── Wizard state ──────────────────────────────────────────────────────────
+
+  /** Current wizard step. Controls which panel is visible. */
   const [step, setStep] = useState<Step>('intro');
+
+  /** Hetzner API token entered by the user. Never persisted to disk/server. */
   const [apiToken, setApiToken] = useState('');
+
+  /** User's SSH public key (e.g. ssh-ed25519 AAAA...). */
   const [sshKey, setSshKey] = useState('');
+
+  /** Desired server hostname in Hetzner. Used to detect existing servers. */
   const [serverName, setServerName] = useState('my-openclaw');
+
+  /** Preferred datacenter location code (e.g. fsn1, hel1, ash). */
   const [location, setLocation] = useState('fsn1');
+
+  /** Hetzner server type (e.g. cax11 for ARM, cx22 for x86). */
   const [serverType, setServerType] = useState('cax11');
+
+  /** Array of progress messages shown during provisioning (streamed from API). */
   const [progress, setProgress] = useState<string[]>([]);
+
+  /** Error message to display, or empty string if no error. */
   const [error, setError] = useState('');
+
+  /** Server connection details, populated after provisioning or detection. */
   const [serverDetails, setServerDetails] = useState<ServerDetails | null>(null);
+
+  /** True while the API token is being validated against Hetzner. */
   const [checking, setChecking] = useState(false);
 
-  // Check for existing server and stored credentials when API token is entered
+  // ── API Interactions ──────────────────────────────────────────────────────
+
+  /**
+   * Validates the API token and checks if a server with `serverName` already exists.
+   *
+   * Flow:
+   * 1. POST to /api/check-server with the token and server name
+   * 2. If a running server is found → jump straight to "done" step
+   * 3. If token is valid but no server → advance to "ssh-key" step
+   * 4. If token is invalid → show error
+   *
+   * @param token - The Hetzner API token to validate.
+   */
   const checkExistingServer = async (token: string) => {
     setChecking(true);
     setError('');
-    
+
     try {
-      // Check Hetzner for existing server
       const res = await fetch('/api/check-server', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apiToken: token, serverName }),
       });
-      
+
       const data = await res.json();
-      
+
       if (data.exists && data.server) {
+        // Server already exists — skip provisioning entirely
         setServerDetails(data.server);
         setStep('done');
       } else if (data.valid) {
+        // Token works, no existing server — proceed to SSH key step
         setStep('ssh-key');
       } else {
         setError(data.error || 'Invalid API token');
@@ -103,10 +165,22 @@ export default function Wizard() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to check server');
     }
-    
+
     setChecking(false);
   };
 
+  /**
+   * Starts the server provisioning process by calling /api/provision.
+   *
+   * The API returns an NDJSON stream (one JSON object per line). Each object
+   * can contain:
+   * - `{ progress: "message" }` — a status update to append to the log
+   * - `{ error: "message" }` — an error that halts provisioning
+   * - `{ done: true, server: {...} }` — provisioning complete
+   *
+   * The stream is consumed using a ReadableStream reader, which lets us
+   * show real-time progress without WebSockets or polling.
+   */
   const startProvisioning = async () => {
     setStep('provisioning');
     setProgress(['Starting provisioning...']);
@@ -124,13 +198,15 @@ export default function Wizard() {
 
       if (!reader) throw new Error('No response stream');
 
+      // Read the NDJSON stream chunk by chunk
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
+
+        // Each chunk may contain multiple newline-delimited JSON objects
         const text = decoder.decode(value);
         const lines = text.split('\n').filter(Boolean);
-        
+
         for (const line of lines) {
           try {
             const data = JSON.parse(line);
@@ -145,7 +221,9 @@ export default function Wizard() {
               setServerDetails(data.server);
               setStep('done');
             }
-          } catch {}
+          } catch {
+            // Ignore malformed JSON lines (e.g. partial chunks)
+          }
         }
       }
     } catch (e) {
@@ -153,31 +231,36 @@ export default function Wizard() {
     }
   };
 
+  // ── Render ────────────────────────────────────────────────────────────────
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-white">
       <div className="max-w-2xl mx-auto px-4 py-12">
+        {/* Page header */}
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold mb-2">🦞 OpenClaw Setup Wizard</h1>
           <p className="text-slate-400">Get your AI agent running in 5 minutes</p>
         </div>
 
-        {/* Progress indicator */}
+        {/* ── Step progress indicator ────────────────────────────────────── */}
         <div className="flex justify-center mb-8">
-          {['intro', 'hetzner-account', 'api-token', 'ssh-key', 'provisioning', 'done'].map((s, i) => (
+          {STEPS.map((s, i) => (
             <div key={s} className="flex items-center">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold
-                ${step === s ? 'bg-orange-500' : 
-                  ['intro', 'hetzner-account', 'api-token', 'ssh-key', 'provisioning', 'done'].indexOf(step) > i 
+                ${step === s ? 'bg-orange-500' :
+                  STEPS.indexOf(step) > i
                     ? 'bg-green-500' : 'bg-slate-700'}`}>
                 {i + 1}
               </div>
-              {i < 5 && <div className="w-8 h-1 bg-slate-700" />}
+              {i < STEPS.length - 1 && <div className="w-8 h-1 bg-slate-700" />}
             </div>
           ))}
         </div>
 
+        {/* ── Wizard panels ─────────────────────────────────────────────── */}
         <div className="bg-slate-800 rounded-xl p-8 shadow-xl">
-          {/* Step: Intro */}
+
+          {/* ─── Step: Intro ─────────────────────────────────────────────── */}
           {step === 'intro' && (
             <div className="space-y-6">
               <h2 className="text-2xl font-bold">Welcome!</h2>
@@ -204,7 +287,7 @@ export default function Wizard() {
 
               <Details title="ℹ️ Why Hetzner? Is it safe?">
                 <p>
-                  <strong>Hetzner</strong> is a German cloud provider founded in 1997. They&apos;re one of Europe&apos;s 
+                  <strong>Hetzner</strong> is a German cloud provider founded in 1997. They&apos;re one of Europe&apos;s
                   largest hosting companies with data centers in Germany, Finland, and the USA.
                 </p>
                 <p>
@@ -214,11 +297,11 @@ export default function Wizard() {
                   ✓ Data stays in your chosen region
                 </p>
                 <p>
-                  Your server is <strong>yours</strong> — we just help you set it up. You have full root access 
+                  Your server is <strong>yours</strong> — we just help you set it up. You have full root access
                   and can delete it anytime from the Hetzner Console.
                 </p>
               </Details>
-              
+
               <button
                 onClick={() => setStep('hetzner-account')}
                 className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-lg transition"
@@ -228,7 +311,7 @@ export default function Wizard() {
             </div>
           )}
 
-          {/* Step: Hetzner Account */}
+          {/* ─── Step: Hetzner Account ───────────────────────────────────── */}
           {step === 'hetzner-account' && (
             <div className="space-y-6">
               <h2 className="text-2xl font-bold">Step 1: Create Hetzner Account</h2>
@@ -252,18 +335,18 @@ export default function Wizard() {
               >
                 Open Hetzner Console ↗
               </a>
-              
+
               <Details title="ℹ️ What happens when I create an account?">
                 <p>
                   You&apos;ll create an account on <strong>hetzner.cloud</strong> (Hetzner&apos;s cloud platform).
                   This is separate from this wizard — Hetzner is the company that will host your server.
                 </p>
                 <p>
-                  You&apos;ll need to verify your identity with a credit card or PayPal. Hetzner may 
+                  You&apos;ll need to verify your identity with a credit card or PayPal. Hetzner may
                   put a small temporary hold (~€1) to verify the payment method.
                 </p>
                 <p>
-                  <strong>Billing:</strong> You only pay for what you use. The CAX11 server costs 
+                  <strong>Billing:</strong> You only pay for what you use. The CAX11 server costs
                   ~€3.85/month. You can delete it anytime and billing stops immediately.
                 </p>
               </Details>
@@ -285,7 +368,7 @@ export default function Wizard() {
             </div>
           )}
 
-          {/* Step: API Token */}
+          {/* ─── Step: API Token ──────────────────────────────────────────── */}
           {step === 'api-token' && (
             <div className="space-y-6">
               <h2 className="text-2xl font-bold">Step 2: Create API Token</h2>
@@ -321,12 +404,12 @@ export default function Wizard() {
                   It&apos;s scoped to your Hetzner project and can only manage resources within that project.
                 </p>
                 <p>
-                  <strong>Security note:</strong> This token is only sent directly to Hetzner&apos;s API. 
-                  We never store it on our servers. After setup, you should delete the token from 
+                  <strong>Security note:</strong> This token is only sent directly to Hetzner&apos;s API.
+                  We never store it on our servers. After setup, you should delete the token from
                   Hetzner Console for security.
                 </p>
                 <p>
-                  The token needs &quot;Read &amp; Write&quot; permission so we can create the server 
+                  The token needs &quot;Read &amp; Write&quot; permission so we can create the server
                   and upload your SSH key.
                 </p>
               </Details>
@@ -354,7 +437,7 @@ export default function Wizard() {
             </div>
           )}
 
-          {/* Step: SSH Key */}
+          {/* ─── Step: SSH Key & Server Config ───────────────────────────── */}
           {step === 'ssh-key' && (
             <div className="space-y-6">
               <h2 className="text-2xl font-bold">Step 3: SSH Key</h2>
@@ -377,6 +460,8 @@ export default function Wizard() {
                 placeholder="ssh-ed25519 AAAA... (paste your public key)"
                 className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 font-mono text-sm"
               />
+
+              {/* Server configuration options */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-slate-400 text-sm mb-1">Server Name</label>
@@ -431,10 +516,9 @@ export default function Wizard() {
                 </select>
                 <p className="text-slate-500 text-xs mt-1">CAX11 is recommended for most users</p>
               </div>
+
               <Details title="ℹ️ What happens when I click Create Server?">
-                <p>
-                  We&apos;ll use your API token to:
-                </p>
+                <p>We&apos;ll use your API token to:</p>
                 <ol className="list-decimal list-inside space-y-1">
                   <li>Upload your SSH key (if provided) to Hetzner</li>
                   <li>Create a new server with Ubuntu 24.04</li>
@@ -469,13 +553,14 @@ export default function Wizard() {
             </div>
           )}
 
-          {/* Step: Provisioning */}
+          {/* ─── Step: Provisioning (streaming progress) ─────────────────── */}
           {step === 'provisioning' && (
             <div className="space-y-6">
               <h2 className="text-2xl font-bold">Creating Your Server...</h2>
               <p className="text-slate-300">
                 This usually takes 2-3 minutes. Please don&apos;t close this page.
               </p>
+              {/* Terminal-style progress log */}
               <div className="bg-slate-900 rounded-lg p-4 h-64 overflow-y-auto font-mono text-sm">
                 {progress.map((line, i) => (
                   <div key={i} className="text-green-400">
@@ -514,14 +599,15 @@ export default function Wizard() {
             </div>
           )}
 
-          {/* Step: Done */}
+          {/* ─── Step: Done (success page) ───────────────────────────────── */}
           {step === 'done' && serverDetails && (
             <div className="space-y-6">
               <div className="text-center">
                 <div className="text-6xl mb-4">🎉</div>
                 <h2 className="text-2xl font-bold">Your Server is Ready!</h2>
               </div>
-              
+
+              {/* Server connection info */}
               <div className="bg-green-900/30 border border-green-500 rounded-lg p-4 space-y-3">
                 <div>
                   <span className="text-slate-400">Server IP:</span>
@@ -534,7 +620,8 @@ export default function Wizard() {
                   </div>
                 )}
               </div>
-              
+
+              {/* Instructions for retrieving token from existing server */}
               {serverDetails.isExisting && (
                 <div className="bg-amber-900/30 border border-amber-500 rounded-lg p-4">
                   <h3 className="font-bold mb-2">📋 Get Your Token</h3>
@@ -550,6 +637,7 @@ export default function Wizard() {
                 </div>
               )}
 
+              {/* SSH connection instructions */}
               <div className="bg-blue-900/30 border border-blue-500 rounded-lg p-4">
                 <h3 className="font-bold mb-2">🖥️ Connect via SSH</h3>
                 <p className="text-slate-300 text-sm mb-3">
@@ -568,6 +656,7 @@ export default function Wizard() {
                 </button>
               </div>
 
+              {/* Post-connect next steps */}
               <div className="bg-slate-700 rounded-lg p-4">
                 <h3 className="font-bold mb-3">Next Steps (after connecting):</h3>
                 <ol className="list-decimal list-inside text-slate-300 space-y-3">
@@ -586,6 +675,7 @@ export default function Wizard() {
                 </ol>
               </div>
 
+              {/* Web UI access via SSH tunnel */}
               <div className="bg-slate-700 rounded-lg p-4">
                 <h3 className="font-bold mb-2">Access the Web UI:</h3>
                 <p className="text-slate-300 text-sm mb-2">Run this on your computer:</p>
@@ -597,6 +687,7 @@ export default function Wizard() {
                 </p>
               </div>
 
+              {/* Security reminder: delete the API token */}
               <div className="bg-red-900/20 border border-red-800 rounded-lg p-4">
                 <h3 className="font-bold mb-2 text-red-300">🔒 Security: Delete Your API Token</h3>
                 <p className="text-slate-300 text-sm mb-2">
@@ -610,6 +701,22 @@ export default function Wizard() {
                 <p className="text-slate-400 text-xs mt-2">
                   You can always create a new token if needed later.
                 </p>
+              </div>
+
+              {/* ⭐ Star the repo CTA */}
+              <div className="bg-gradient-to-r from-yellow-900/30 to-orange-900/30 border border-yellow-600/50 rounded-lg p-4 text-center">
+                <h3 className="font-bold mb-2">⭐ Enjoying OpenClaw?</h3>
+                <p className="text-slate-300 text-sm mb-3">
+                  If this wizard helped you get set up, consider starring the repo — it helps others find the project!
+                </p>
+                <a
+                  href={GITHUB_REPO}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-6 rounded-lg transition"
+                >
+                  ⭐ Star on GitHub
+                </a>
               </div>
 
               <a
@@ -631,29 +738,13 @@ SSH: ssh openclaw@${serverDetails.ip}`;
               >
                 📋 Copy Details to Clipboard
               </button>
-
-              <div className="bg-gradient-to-r from-yellow-900/30 to-orange-900/30 border border-yellow-600 rounded-lg p-4 text-center">
-                <p className="text-yellow-200 mb-2">
-                  🎉 Congrats on setting up OpenClaw!
-                </p>
-                <p className="text-slate-300 text-sm mb-3">
-                  If this wizard helped you, please star the repo — it helps others discover it!
-                </p>
-                <a
-                  href="https://github.com/telegraphic-dev/openclaw-wizard"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-lg transition"
-                >
-                  ⭐ Star on GitHub
-                </a>
-              </div>
             </div>
           )}
         </div>
 
+        {/* Footer with support link */}
         <p className="text-center text-slate-500 text-sm mt-8">
-          Need help? <a href="https://github.com/telegraphic-dev/openclaw-wizard/issues" className="text-orange-400 underline">Open an issue on GitHub</a>
+          Need help? Open an issue on <a href={GITHUB_ISSUES} className="text-orange-400 underline">GitHub</a>
         </p>
       </div>
     </main>
