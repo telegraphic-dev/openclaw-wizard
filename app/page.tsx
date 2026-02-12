@@ -1,10 +1,41 @@
+/**
+ * OpenClaw Hetzner Setup Wizard
+ * 
+ * A step-by-step wizard that guides users through deploying their own OpenClaw
+ * AI agent on Hetzner Cloud. The wizard handles:
+ * 
+ * 1. Account setup guidance (external Hetzner registration)
+ * 2. API token collection and validation
+ * 3. SSH key upload for secure access
+ * 4. Server provisioning via Hetzner Cloud API
+ * 5. OpenClaw installation via cloud-init bootstrap script
+ * 
+ * @see https://github.com/telegraphic-dev/openclaw-wizard
+ * @see https://github.com/telegraphic-dev/openclaw-hetzner-bootstrap
+ */
 'use client';
 
 import { useState } from 'react';
 
+/**
+ * Wizard steps in order of progression.
+ * - intro: Welcome screen with overview
+ * - hetzner-account: Guide to create Hetzner account
+ * - api-token: Collect and validate Hetzner API token
+ * - ssh-key: Collect SSH public key and server configuration
+ * - provisioning: Server creation in progress
+ * - done: Success screen with connection instructions
+ */
 type Step = 'intro' | 'hetzner-account' | 'api-token' | 'ssh-key' | 'provisioning' | 'done';
 
-// Expandable details component
+/**
+ * Expandable "Learn More" component for additional context.
+ * Used throughout the wizard to provide detailed explanations
+ * without cluttering the main UI.
+ * 
+ * @param title - The clickable header text
+ * @param children - Content shown when expanded
+ */
 function Details({ title, children }: { title: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
@@ -600,12 +631,29 @@ SSH: ssh openclaw@${serverDetails.ip}`;
               >
                 📋 Copy Details to Clipboard
               </button>
+
+              <div className="bg-gradient-to-r from-yellow-900/30 to-orange-900/30 border border-yellow-600 rounded-lg p-4 text-center">
+                <p className="text-yellow-200 mb-2">
+                  🎉 Congrats on setting up OpenClaw!
+                </p>
+                <p className="text-slate-300 text-sm mb-3">
+                  If this wizard helped you, please star the repo — it helps others discover it!
+                </p>
+                <a
+                  href="https://github.com/telegraphic-dev/openclaw-wizard"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-lg transition"
+                >
+                  ⭐ Star on GitHub
+                </a>
+              </div>
             </div>
           )}
         </div>
 
         <p className="text-center text-slate-500 text-sm mt-8">
-          Need help? Join the <a href="https://discord.gg/openclaw" className="text-orange-400 underline">OpenClaw Discord</a>
+          Need help? <a href="https://github.com/telegraphic-dev/openclaw-wizard/issues" className="text-orange-400 underline">Open an issue on GitHub</a>
         </p>
       </div>
     </main>

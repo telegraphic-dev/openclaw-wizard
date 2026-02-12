@@ -77,7 +77,7 @@ export default function CleanupPage() {
         </div>
 
         <p className="text-center text-slate-500 text-sm mt-8">
-          Questions? Join the <a href="https://discord.gg/openclaw" className="text-orange-400 underline">OpenClaw Discord</a>
+          Questions? <a href="https://github.com/telegraphic-dev/openclaw-wizard/issues" className="text-orange-400 underline">Open an issue on GitHub</a>
         </p>
       </div>
     </main>

@@ -1,7 +1,31 @@
+/**
+ * Check Server API Route
+ * 
+ * Validates a Hetzner API token and checks if a server with
+ * the given name already exists. This is used to:
+ * 
+ * 1. Validate the API token before proceeding
+ * 2. Detect existing servers to skip provisioning
+ * 3. Allow resuming if the wizard was interrupted
+ * 
+ * @example Request:
+ * POST /api/check-server
+ * { "apiToken": "...", "serverName": "my-openclaw" }
+ * 
+ * @example Response (new server):
+ * { "valid": true, "exists": false }
+ * 
+ * @example Response (existing server):
+ * { "valid": true, "exists": true, "server": { "ip": "...", ... } }
+ */
 import { NextRequest, NextResponse } from 'next/server';
 
+/** Hetzner Cloud API base URL */
 const HETZNER_API = 'https://api.hetzner.cloud/v1';
 
+/**
+ * POST handler to validate token and check for existing servers.
+ */
 export async function POST(request: NextRequest) {
   try {
     const { apiToken, serverName = 'my-openclaw' } = await request.json();

@@ -1,8 +1,43 @@
+/**
+ * Server Provisioning API Route
+ * 
+ * This endpoint handles the complete server provisioning flow:
+ * 1. Validates the Hetzner API token
+ * 2. Checks for existing servers with the same name
+ * 3. Uploads the user's SSH key to Hetzner
+ * 4. Creates a new server with cloud-init bootstrap script
+ * 5. Waits for the server to be running
+ * 6. Returns connection details
+ * 
+ * The endpoint streams progress updates as newline-delimited JSON,
+ * allowing the frontend to show real-time status.
+ * 
+ * @example Request body:
+ * {
+ *   apiToken: "hetzner-api-token",
+ *   sshKey: "ssh-ed25519 AAAA...",
+ *   serverName: "my-openclaw",
+ *   location: "fsn1",
+ *   serverType: "cax11"
+ * }
+ * 
+ * @example Response stream:
+ * {"progress": "Verifying API token..."}
+ * {"progress": "Creating server..."}
+ * {"done": true, "server": {"ip": "1.2.3.4", ...}}
+ */
 import { NextRequest } from 'next/server';
 
+/** Hetzner Cloud API base URL */
 const HETZNER_API = 'https://api.hetzner.cloud/v1';
+
+/** Bootstrap script URL - installs OpenClaw on the server */
 const BOOTSTRAP_URL = 'https://raw.githubusercontent.com/telegraphic-dev/openclaw-hetzner-bootstrap/main/bootstrap.sh';
 
+/**
+ * POST handler for server provisioning.
+ * Streams progress updates and returns server details on completion.
+ */
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
   
