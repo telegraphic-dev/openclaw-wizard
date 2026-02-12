@@ -513,15 +513,15 @@ export default function Wizard() {
                   No SSH client? Use Hetzner&apos;s built-in web console:
                 </p>
                 <a
-                  href={`https://console.hetzner.cloud/servers/${serverDetails.serverId}/console`}
+                  href="https://console.hetzner.cloud/"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="block w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-center transition"
                 >
-                  Open Web Console →
+                  Open Hetzner Console →
                 </a>
                 <p className="text-slate-400 text-xs mt-2">
-                  Server ID: {serverDetails.serverId} • Opens terminal in browser
+                  Click your project → server <strong>{serverDetails.name}</strong> (ID: {serverDetails.serverId}) → Console tab
                 </p>
               </div>
 
