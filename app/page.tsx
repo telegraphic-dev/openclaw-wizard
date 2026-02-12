@@ -68,6 +68,30 @@ export default function Wizard() {
   const [serverDetails, setServerDetails] = useState<ServerDetails | null>(null);
   const [checking, setChecking] = useState(false);
   const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [consoleLoading, setConsoleLoading] = useState(false);
+
+  // Request console access and open Hetzner console
+  const openConsole = async () => {
+    if (!serverDetails?.serverId || !apiToken) {
+      window.open('https://console.hetzner.cloud/', '_blank');
+      return;
+    }
+    
+    setConsoleLoading(true);
+    try {
+      // Request console access first (activates the console session)
+      await fetch('/api/console-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiToken, serverId: serverDetails.serverId }),
+      });
+      // Open the Hetzner console - user should be redirected to their server
+      window.open('https://console.hetzner.cloud/', '_blank');
+    } catch {
+      window.open('https://console.hetzner.cloud/', '_blank');
+    }
+    setConsoleLoading(false);
+  };
 
   // Check for existing server and stored credentials when API token is entered
   const checkExistingServer = async (token: string) => {
@@ -512,17 +536,24 @@ export default function Wizard() {
                 <p className="text-slate-300 text-sm mb-3">
                   No SSH client? Use Hetzner&apos;s built-in web console:
                 </p>
-                <a
-                  href="https://console.hetzner.cloud/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-center transition"
+                <button
+                  onClick={openConsole}
+                  disabled={consoleLoading}
+                  className="block w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-bold py-2 px-4 rounded-lg text-center transition"
                 >
-                  Open Hetzner Console →
-                </a>
+                  {consoleLoading ? 'Opening...' : 'Open Hetzner Console →'}
+                </button>
                 <p className="text-slate-400 text-xs mt-2">
-                  Click your project → server <strong>{serverDetails.name}</strong> (ID: {serverDetails.serverId}) → Console tab
+                  In Hetzner: Your project → <strong>{serverDetails.name}</strong> → Console tab
                 </p>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(String(serverDetails.serverId));
+                  }}
+                  className="text-blue-400 text-xs mt-1 hover:underline"
+                >
+                  📋 Copy Server ID: {serverDetails.serverId}
+                </button>
               </div>
 
               <div className="bg-slate-700 rounded-lg p-4">
