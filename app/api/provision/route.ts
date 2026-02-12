@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       };
 
       try {
-        const { apiToken, sshKey, serverName = 'openclaw' } = await request.json();
+        const { apiToken, sshKey, serverName = 'openclaw', location: preferredLocation = 'fsn1' } = await request.json();
 
         if (!apiToken) {
           send({ error: 'API token is required' });
@@ -75,7 +75,9 @@ runcmd:
         // Create server - try multiple locations
         send({ progress: '🖥️ Creating server...' });
         
-        const locations = ['fsn1', 'nbg1', 'hel1', 'ash', 'hil'];
+        // Put preferred location first, then fallbacks
+        const allLocations = ['fsn1', 'nbg1', 'hel1', 'ash', 'hil', 'sin'];
+        const locations = [preferredLocation, ...allLocations.filter(l => l !== preferredLocation)];
         let createRes: Response | null = null;
         let createData: { server: { id: number; public_net: { ipv4: { ip: string } } }; root_password?: string } | null = null;
         let usedLocation = '';

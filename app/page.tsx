@@ -15,6 +15,7 @@ export default function Wizard() {
   const [apiToken, setApiToken] = useState('');
   const [sshKey, setSshKey] = useState('');
   const [serverName, setServerName] = useState('my-openclaw');
+  const [location, setLocation] = useState('fsn1');
   const [progress, setProgress] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [serverDetails, setServerDetails] = useState<ServerDetails | null>(null);
@@ -28,7 +29,7 @@ export default function Wizard() {
       const res = await fetch('/api/provision', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiToken, sshKey, serverName }),
+        body: JSON.stringify({ apiToken, sshKey, serverName, location }),
       });
 
       const reader = res.body?.getReader();
@@ -234,13 +235,33 @@ export default function Wizard() {
                 placeholder="ssh-ed25519 AAAA... (paste your public key)"
                 className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 font-mono text-sm"
               />
-              <input
-                type="text"
-                value={serverName}
-                onChange={(e) => setServerName(e.target.value)}
-                placeholder="Server name"
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500"
-              />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-slate-400 text-sm mb-1">Server Name</label>
+                  <input
+                    type="text"
+                    value={serverName}
+                    onChange={(e) => setServerName(e.target.value)}
+                    placeholder="my-openclaw"
+                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 text-sm mb-1">Location</label>
+                  <select
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white"
+                  >
+                    <option value="fsn1">🇩🇪 Falkenstein, Germany</option>
+                    <option value="nbg1">🇩🇪 Nuremberg, Germany</option>
+                    <option value="hel1">🇫🇮 Helsinki, Finland</option>
+                    <option value="ash">🇺🇸 Ashburn, USA</option>
+                    <option value="hil">🇺🇸 Hillsboro, USA</option>
+                    <option value="sin">🇸🇬 Singapore</option>
+                  </select>
+                </div>
+              </div>
               <div className="flex gap-4">
                 <button
                   onClick={() => setStep('api-token')}
